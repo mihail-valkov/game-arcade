@@ -1,16 +1,12 @@
 import arcade
 import math
 
-import arcade.color
-
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 SCREEN_TITLE = "Sopwith Game with Arcade"
 PLANE_SPEED_MIN = 2
 PLANE_SPEED_MAX = 10
-PLANE_SIZE = 128
-TILT_ANGLE = 1
-TERRAIN_BUFFER = 400  # Additional buffer for smooth terrain rendering
+PLANE_SIZE = 1/4
 
 class SopwithGame(arcade.Window):
     def __init__(self):
@@ -21,27 +17,18 @@ class SopwithGame(arcade.Window):
         self.plane_sprite = None
         self.plane_speed = PLANE_SPEED_MIN
         self.plane_angle = 0
+        self.flying = False
         self.terrain_points = []
         self.targets = arcade.SpriteList()
         self.bullets = arcade.SpriteList()
         self.bombs = arcade.SpriteList()
-        self.plane_flipped = False
         self.setup()
 
     def setup(self):
-        
-        self.plane_texture = arcade.load_texture("plane.png")
-        self.plane_texture_flipped = arcade.load_texture("plane.png", flipped_vertically=True)
-        self.plane_sprite = arcade.Sprite(center_x=SCREEN_WIDTH // 2, center_y=100)
-        self.plane_sprite.texture = self.plane_texture
-        self.SetSize()
+        self.plane_sprite = arcade.Sprite("plane.png", scale=PLANE_SIZE, center_x=SCREEN_WIDTH//2, center_y=100)
         self.load_terrain()
         self.load_targets()
         self.setup_sounds()
-
-    def SetSize(self):
-        self.plane_sprite.width = 64
-        self.plane_sprite.height = 32
 
     def setup_sounds(self):
         return
@@ -56,8 +43,8 @@ class SopwithGame(arcade.Window):
             for line in f:
                 if line.startswith("#"):
                     continue
-                x, y, color = map(int, line.split(","))
-                self.terrain_points.append((x, y, color))
+                x, y = map(int, line.split(","))
+                self.terrain_points.append((x, y))
 
     def load_targets(self):
         target_images = ["target1.png", "target2.png", "target3.png", "target4.png", "target5.png"]
@@ -68,15 +55,16 @@ class SopwithGame(arcade.Window):
                 x, _ = map(int, line.split(","))
                 y = self.get_y_from_terrain(x)
                 target_image = target_images[len(self.targets) % len(target_images)]
-                target = arcade.Sprite(target_image, center_x=x)
+                target = arcade.Sprite(target_image)
+                target.center_x = x
                 target.bottom = y
                 self.targets.append(target)
 
     def get_y_from_terrain(self, x):
         # Simple linear interpolation for now
         for i in range(len(self.terrain_points) - 1):
-            x1, y1, _ = self.terrain_points[i]
-            x2, y2, _ = self.terrain_points[i + 1]
+            x1, y1 = self.terrain_points[i]
+            x2, y2 = self.terrain_points[i + 1]
             if x1 <= x <= x2:
                 t = (x - x1) / (x2 - x1)
                 return y1 + t * (y2 - y1)
@@ -93,38 +81,25 @@ class SopwithGame(arcade.Window):
         self.gui_camera.use()
 
     def draw_terrain(self):
-        
-        color_list = [(123, 255, 123), \
-             (123, 255, 120),  \
-             (120, 255, 120), \
-             (120, 250, 120),  \
-             (120, 250, 118)]  # Define your color list here
-    
-        start_x = self.camera.position[0] - TERRAIN_BUFFER
-        end_x = self.camera.position[0] + SCREEN_WIDTH + TERRAIN_BUFFER
-        visible_terrain = [point for point in self.terrain_points if start_x <= point[0] <= end_x]
-            
+        visible_terrain = [point for point in self.terrain_points if self.camera.position[0] <= point[0] <= self.camera.position[0] + SCREEN_WIDTH]
         if visible_terrain:
-            x0, y0, c0 = visible_terrain[0]
-            for x1, y1, c1 in visible_terrain[1:]:
-                #arcade.draw_polygon_outline([(x0, 0), (x0, y0), (x1, y1), (x1, 0)], color_list[c0])
-                arcade.draw_polygon_filled([(x0, 0), (x0, y0), (x1, y1), (x1, 0)], color_list[c0])
-                x0, y0, c0 = x1, y1, c1
-
+            x0, y0 = visible_terrain[0]
+            for x1, y1 in visible_terrain[1:]:
+                arcade.draw_polygon_filled([(x0, 0), (x0, y0), (x1, y1), (x1, 0)], arcade.color.GREEN)
+                x0, y0 = x1, y1
 
     def on_key_press(self, key, modifiers):
-        if key == arcade.key.UP:            
-            self.plane_angle += TILT_ANGLE
+        if key == arcade.key.UP:
+            self.flying = True
+            self.plane_angle += 5
         elif key == arcade.key.DOWN:
-            self.plane_angle -= TILT_ANGLE
+            self.plane_angle -= 5
         elif key == arcade.key.LEFT:
             self.plane_speed = max(PLANE_SPEED_MIN, self.plane_speed - 1)
         elif key == arcade.key.RIGHT:
             self.plane_speed = min(PLANE_SPEED_MAX, self.plane_speed + 1)
         elif key == arcade.key.PERIOD:
-            self.plane_flipped = not self.plane_flipped
-            self.plane_sprite.texture = self.plane_texture_flipped if self.plane_flipped else self.plane_texture
-            self.SetSize()
+            self.plane_sprite.angle += 180
         elif key == arcade.key.B:
             self.drop_bomb()
         elif key == arcade.key.SPACE:
@@ -179,7 +154,7 @@ class SopwithGame(arcade.Window):
         return
         if self.plane_sprite.bottom <= self.get_y_from_terrain(self.plane_sprite.center_x):
             arcade.play_sound(self.crash_sound)
-            arcade.close_window()
+            #arcade.close_window()
 
     def scroll_viewport(self):
         self.camera.move_to((self.plane_sprite.center_x - SCREEN_WIDTH // 2, 0))
