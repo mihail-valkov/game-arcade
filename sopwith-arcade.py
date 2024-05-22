@@ -16,8 +16,9 @@ MAX_EXPLOSIONS = 10
 
 # Define the Explosion class to store position and start time
 class Explosion:
-    def __init__(self, position, camera_pos, start_time):
+    def __init__(self, position, size, camera_pos, start_time):
         self.position = position
+        self.size = size
         self.orig_position = position
         self.camera_pos = camera_pos
         self.start_time = start_time
@@ -137,30 +138,38 @@ class SopwithGame(arcade.Window):
 
     def renderShader(self):
         # Prepare data for the shader
-        active_explosions = [exp for exp in self.explosions if self.time - exp.start_time <= 1.9]
+        delayed_explosions = [exp for exp in self.explosions if self.time - exp.start_time < 0]  
+        active_explosions = [exp for exp in self.explosions if 0 <= self.time - exp.start_time <= 2]
         for exp in active_explosions:
             exp.position = (
                 exp.orig_position[0] - self.camera.position[0],
                 exp.orig_position[1] - self.camera.position[1])
             
             #+ (self.camera.position.y - exp.camera_pos.y)
+        
             
         positions = [exp.position for exp in active_explosions]
+        sizes = [exp.size for exp in active_explosions]
         times = [exp.start_time for exp in active_explosions]
 
         # Ensure the arrays are the correct length and type
         positions_flat = [coord for pos in positions for coord in pos] + [0.0, 0.0] * (10 - len(positions))
+        sizes_array = sizes + [0.0] * (10 - len(times))
         times_array = times + [0.0] * (10 - len(times))
         num_explosions = len(active_explosions)
 
+        active_explosions += delayed_explosions
+
         # Convert to tuples
         positions_tuple = tuple(positions_flat)
+        sizes_tuple = tuple(sizes_array)
         times_tuple = tuple(times_array)
 
         # Pass data to the shader
         self.shadertoy.program["explodePositions"] = positions_tuple
-        self.textbox_time.text = f"{positions_tuple[0]}"
-        #self.textbox_time.update()
+        self.shadertoy.program["explosionSizes"] = sizes_tuple
+        #self.textbox_time.text = f"{positions_tuple[0]}"
+        self.textbox_time.text = f"{len(delayed_explosions)}"
         self.shadertoy.program["explodeTimes"] = times_tuple
         self.shadertoy.program["numExplosions"] = num_explosions
 
@@ -210,10 +219,10 @@ class SopwithGame(arcade.Window):
                 (SCREEN_WIDTH + self.camera.position.x, 0)
             ],
             [
-                arcade.color.SKY_BLUE, 
-                arcade.color.DEEP_SKY_BLUE,
                 arcade.color.DEEP_SKY_BLUE, 
-                arcade.color.SKY_BLUE,
+                arcade.color.DARK_BLUE,
+                arcade.color.DARK_BLUE, 
+                arcade.color.DEEP_SKY_BLUE,
             ])
         else:
             self.sky_shape.center_x = self.camera.position.x
@@ -338,29 +347,30 @@ class SopwithGame(arcade.Window):
             if hit_list:
                 bullet.remove_from_sprite_lists()
                 for target in hit_list:
-                    self.addExplosion(target)
+                    self.addExplosion(target, 0.02)
                     target.remove_from_sprite_lists()
                     self.score += 10
         for bomb in self.bombs:
             hit_list = arcade.check_for_collision_with_list(bomb, self.targets)
             if hit_list:
-                #self.addExplosion(bomb)
+                self.addExplosion(bomb)
                 bomb.remove_from_sprite_lists()
                 for target in hit_list:
-                    self.addExplosion(target)
+                    self.addExplosion(target, 0.05)
                     target.remove_from_sprite_lists()
                     self.score += 10
             if bomb.bottom <= self.get_y_from_terrain(bomb.center_x):
                 self.addExplosion(bomb)
                 bomb.remove_from_sprite_lists()
 
-    def addExplosion(self, sprite: arcade.Sprite):
+    def addExplosion(self, sprite: arcade.Sprite, delay: float = 0.0):
         if len(self.explosions) == MAX_EXPLOSIONS:
             self.explosions.pop(0)
         new_explosion = Explosion(
-            sprite.position, 
+            sprite.position,
+            (sprite.width + sprite.height) / 100,
             self.camera.position,
-            self.time)
+            self.time + delay)
         self.explosions.append(new_explosion)
 
     def check_crash(self):

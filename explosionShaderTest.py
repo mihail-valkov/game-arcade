@@ -63,7 +63,7 @@ class MyGame(arcade.Window):
         # Convert to tuples
         positions_tuple = tuple(positions_flat)
         times_tuple = tuple(times_array)
-
+        
         # Pass data to the shader
         self.shadertoy.program["explodePositions"] = positions_tuple
         self.shadertoy.program["explodeTimes"] = times_tuple
@@ -71,7 +71,7 @@ class MyGame(arcade.Window):
 
         self.use()
         self.clear()
-       
+
         # Use the shader to draw the explosions
         self.shadertoy.render(time=self.time)
 
