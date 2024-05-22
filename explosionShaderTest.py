@@ -12,7 +12,7 @@ class MyGame(arcade.Window):
     def __init__(self, width, height, title):
         super().__init__(width, height, title)
         #create rectangle shape for the background
-        self.background = arcade.create_rectangle_filled(width/2, height/2 + 150, width, height, arcade.color.SKY_BLUE)
+        self.background = arcade.create_rectangle_filled(width/2, height/2 + 150, width, height, arcade.color.DEEP_SKY_BLUE)
         # Load the shader
         self.load_shader((width, height))
 

@@ -47,8 +47,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord / iResolution.xy;
     vec4 texColor = texture(iChannel0, uv);
 
-    if (numExplosions == 0) 
-    {
+    if (numExplosions == 0) {
         fragColor = texColor;
         return;
     }
@@ -60,9 +59,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         float explodeTime = explodeTimes[i];
         float explosionSize = explosionSizes[i]; // assuming x component represents the size
 
-        if (explosionSize == 0.) {
-            explosionSize = 1.;
-        }
+        explosionSize = explosionSize == 0. ? 1. : explosionSize;
 
         explodeTime = iTime - explodeTime;
 

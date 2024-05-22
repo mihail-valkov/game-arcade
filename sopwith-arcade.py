@@ -343,13 +343,19 @@ class SopwithGame(arcade.Window):
 
     def check_collisions(self):
         for bullet in self.bullets:
-            hit_list = arcade.check_for_collision_with_list(bullet, self.targets)
-            if hit_list:
+            # Remove the bullet if it goes off-screen
+            if (bullet.bottom <= self.get_y_from_terrain(bullet.center_x) or 
+                bullet.top < 0 or bullet.right - self.camera.position.x < 0 or 
+                bullet.left - self.camera.position.x > SCREEN_WIDTH):
                 bullet.remove_from_sprite_lists()
-                for target in hit_list:
-                    self.addExplosion(target, 0.02)
-                    target.remove_from_sprite_lists()
-                    self.score += 10
+            else:
+                hit_list = arcade.check_for_collision_with_list(bullet, self.targets)
+                if hit_list:
+                    bullet.remove_from_sprite_lists()
+                    for target in hit_list:
+                        self.addExplosion(target, 0.02)
+                        target.remove_from_sprite_lists()
+                        self.score += 10        
         for bomb in self.bombs:
             hit_list = arcade.check_for_collision_with_list(bomb, self.targets)
             if hit_list:
