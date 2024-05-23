@@ -199,7 +199,6 @@ class SopwithGame(arcade.Window):
 
     def draw_terrain(self):
         
-
         color_list = [
             (113, 255, 113),
             (123, 215, 120),
@@ -213,20 +212,19 @@ class SopwithGame(arcade.Window):
         if self.sky_shape is None:
             self.sky_shape = self.draw_textured_polygon(
             [
-                (self.camera.position.x, 0),
-                (self.camera.position.x, SCREEN_HEIGHT),
-                (SCREEN_WIDTH + self.camera.position.x, SCREEN_HEIGHT),
-                (SCREEN_WIDTH + self.camera.position.x, 0)
+                (0, 0),
+                (0, SCREEN_HEIGHT),
+                (SCREEN_WIDTH, SCREEN_HEIGHT),
+                (SCREEN_WIDTH, 0)
             ],
             [
-                arcade.color.DEEP_SKY_BLUE, 
-                arcade.color.DARK_BLUE,
-                arcade.color.DARK_BLUE, 
+                arcade.color.SKY_BLUE,
                 arcade.color.DEEP_SKY_BLUE,
+                arcade.color.DEEP_SKY_BLUE,
+                arcade.color.SKY_BLUE,
             ])
-        else:
-            self.sky_shape.center_x = self.camera.position.x
-            
+
+        self.sky_shape.center_x = self.camera.position.x
         self.sky_shape.draw()
 
         visible_terrain = [point for point in self.terrain_points if start_x <= point[0] <= end_x]
@@ -388,17 +386,20 @@ class SopwithGame(arcade.Window):
 
     def scroll_viewport(self):
         # Calculate the relative position of the plane on the screen
-        plane_screen_x = self.plane_sprite.center_x - self.camera.position[0]
+        #plane_screen_x = self.plane_sprite.center_x - self.camera.position[0]
 
-        if self.prev_plane_x - self.plane_sprite.center_x < -1:  # Moving forward
+        """ if self.prev_plane_x - self.plane_sprite.center_x < -1:  # Moving forward
             camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH * 0.2
             self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.1)
         elif self.prev_plane_x - self.plane_sprite.center_x > 1:  # Moving backward
             camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH * 0.8
-            self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.1)
-        else:
-            camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH // 2
+            self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.1) """
+        #else:
+            #camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH // 2
             #self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.1)
+
+        camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH *.5
+        self.camera.move_to((camera_pos_x, self.camera.position.y), 0.2)
 
         # Update the previous plane position
         self.prev_plane_x = self.plane_sprite.center_x
