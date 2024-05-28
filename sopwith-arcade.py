@@ -1,18 +1,54 @@
 import arcade
 import math
+import time
 from arcade.experimental import Shadertoy
 
 
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 SCREEN_TITLE = "Sopwith Game with Arcade"
-PLANE_SPEED_MIN = 2
-PLANE_SPEED_MAX = 10
+PLANE_SPEED_MIN = 3
+PLANE_SPEED_MAX = 7
 PLANE_SIZE = 128
-TILT_ANGLE = 1
+TILT_ANGLE = 2
 TERRAIN_BUFFER = 400  # Additional buffer for smooth terrain rendering
 AIR_RESISTANCE = 0.98  # Air resistance factor
 MAX_EXPLOSIONS = 10
+BULLET_SPEED = 12
+BOMB_DROP_INTERVAL = 0.5  # Time interval between bomb drops
+
+BACKGROUND_LAYER_1_SPEED = 0.7  # Speed for the first background layer
+BACKGROUND_LAYER_2_SPEED = 0.5  # Speed for the second background layer
+
+class ParalaxBackgroundLayer():
+  def __init__(self, image1, image2, scroll_speed):
+    self.background1 = image1
+    self.background2 = image2
+    self.scroll_speed = scroll_speed
+    self.background1_start = 0
+    self.background2_start = image1.width
+
+  def draw_background(self, camera: arcade.Camera, y = 0):
+        distance = camera.position.x * self.scroll_speed
+
+        temp = camera.position.x * (1 - self.scroll_speed)
+
+        if temp > self.background1_start + self.background1.width:
+            self.background1_start += self.background1.width + self.background2.width
+        elif temp < self.background1_start - self.background2.width:
+            self.background1_start -= self.background1.width + self.background2.width
+
+        if temp > self.background2_start + self.background2.width:
+            self.background2_start += self.background1.width + self.background2.width
+        elif temp < self.background2_start - self.background1.width:
+            self.background2_start -= self.background1.width + self.background2.width
+
+        # Draw the background only if bounds intersect with the viewport
+        if self.background1_start + distance - camera.position.x > -self.background1.width and self.background1_start + distance - camera.position.x < SCREEN_WIDTH:
+            arcade.draw_lrwh_rectangle_textured(self.background1_start + distance, y, self.background1.width, self.background1.height, self.background1)
+        if self.background2_start + distance - camera.position.x > -self.background2.width and self.background2_start + distance - camera.position.x< SCREEN_WIDTH:
+            arcade.draw_lrwh_rectangle_textured(self.background2_start + distance, y, self.background2.width, self.background1.height, self.background2)
+
 
 # Define the Explosion class to store position and start time
 class Explosion:
@@ -22,6 +58,53 @@ class Explosion:
         self.orig_position = position
         self.camera_pos = camera_pos
         self.start_time = start_time
+
+class ShaderManager:
+    def __init__(self, window_size):
+        self.shadertoy = Shadertoy.create_from_file(window_size, "multiExplosion.glsl")
+
+        self.channel0 = self.shadertoy.ctx.framebuffer(
+            color_attachments=[self.shadertoy.ctx.texture(window_size, components=4)]
+        )
+        self.channel1 = self.shadertoy.ctx.framebuffer(
+            color_attachments=[self.shadertoy.ctx.texture(window_size, components=4)]
+        )
+
+        self.shadertoy.channel_0 = self.channel0.color_attachments[0]
+        self.shadertoy.channel_1 = self.channel1.color_attachments[0]
+
+    def render(self, time, explosions, camera_position):
+        delayed_explosions = [exp for exp in explosions if time - exp.start_time < 0]  
+        active_explosions = [exp for exp in explosions if 0 <= time - exp.start_time <= 2]
+
+        for exp in active_explosions:
+            exp.position = (
+                exp.orig_position[0] - camera_position[0],
+                exp.orig_position[1] - camera_position[1]
+            )
+        
+        positions = [exp.position for exp in active_explosions]
+        sizes = [exp.size for exp in active_explosions]
+        times = [exp.start_time for exp in active_explosions]
+
+        positions_flat = [coord for pos in positions for coord in pos] + [0.0, 0.0] * (10 - len(positions))
+        sizes_array = sizes + [0.0] * (10 - len(times))
+        times_array = times + [0.0] * (10 - len(times))
+        num_explosions = len(active_explosions)
+
+        active_explosions += delayed_explosions
+
+        positions_tuple = tuple(positions_flat)
+        sizes_tuple = tuple(sizes_array)
+        times_tuple = tuple(times_array)
+
+        self.shadertoy.program["explodePositions"] = positions_tuple
+        self.shadertoy.program["explosionSizes"] = sizes_tuple
+        self.shadertoy.program["explodeTimes"] = times_tuple
+        self.shadertoy.program["numExplosions"] = num_explosions
+
+        self.shadertoy.render(time=time)
+
 
 class SopwithGame(arcade.Window):
     def __init__(self):
@@ -36,39 +119,40 @@ class SopwithGame(arcade.Window):
         self.targets = arcade.SpriteList()
         self.bullets = arcade.SpriteList()
         self.bombs = arcade.SpriteList()
+        self.prev_bomb_time = 0
         self.plane_flipped = False
         self.up_pressed = False
         self.down_pressed = False
         self.left_pressed = False
         self.right_pressed = False
         self.prev_plane_x = 0.
-        self.textbox_time = arcade.Text("Time: 0", 0, 0, arcade.color.BLACK, 14)
+        self.textbox_debug = arcade.Text("Time: 0", 0, 0, arcade.color.LIGHT_PINK, 14)
         self.textbox_score = arcade.Text("Score: 0", 20, SCREEN_HEIGHT - 20, arcade.color.YELLOW, 14)
-        # List to store active explosions
         self.explosions = []
-        # Initialize time
         self.time = 0.0
-        self.setup()
-        self.time = 0.
         self.sky_shape = None
         self.score = 0
-
-        self.load_shader()
+        self.shader_manager = ShaderManager(self.get_size())
+        self.setup()
+        self.start_time = time.time()
+        self.frame_count = 0
+        self.fps = 0
 
     def setup(self):
+        self.load_terrain()
+        self.setup_plane()
+        self.load_targets()
+        self.setup_sounds()
+
+    def setup_plane(self):
         self.plane_texture = arcade.load_texture("plane.png")
         self.plane_texture_flipped = arcade.load_texture("plane.png", flipped_vertically=True)
         self.plane_sprite = arcade.Sprite(scale=0.25)
         self.plane_sprite.texture = self.plane_texture
-        self.SetSize()
-        self.load_terrain()
-        self.load_targets()
+        self.SetPlaneSize()
         self.plane_sprite.center_y = self.get_y_from_terrain(self.plane_sprite.center_x) + self.plane_sprite.height / 2
-        self.setup_sounds()
-        
 
-
-    def SetSize(self):
+    def SetPlaneSize(self):
         self.plane_sprite.width = 64
         self.plane_sprite.height = 32
 
@@ -80,14 +164,25 @@ class SopwithGame(arcade.Window):
         self.crash_sound = arcade.load_sound("crash.wav")
         arcade.play_sound(self.plane_sound, looping=True)
 
+    def draw_background_layers(self):
+        self.paralaxBackground1.draw_background(self.camera, SCREEN_HEIGHT - self.background_layer_2.height)
+        self.paralaxBackground2.draw_background(self.camera, 30)
+
     def load_terrain(self):
+        self.background_layer_1 = arcade.load_texture("background_layer_1.png")
+        self.background_layer_1_2 = arcade.load_texture("background_layer_1_2.png")
+        self.background_layer_2 = arcade.load_texture("background_layer_2.png")
+        self.background_layer_2_2 = arcade.load_texture("background_layer_2_2.png")
+
+        self.paralaxBackground1 = ParalaxBackgroundLayer(self.background_layer_1, self.background_layer_1_2, BACKGROUND_LAYER_1_SPEED)
+        self.paralaxBackground2 = ParalaxBackgroundLayer(self.background_layer_2, self.background_layer_2_2, BACKGROUND_LAYER_2_SPEED)
+
         with open("terrain.txt") as f:
             for line in f:
                 if line.startswith("#"):
                     continue
                 x, y, color = map(int, line.split(","))
                 self.terrain_points.append((x, y, color))
-        self.terrain_texture = arcade.load_texture("terrain.png")
 
     def load_targets(self):
         target_images = ["target1.png", "target2.png", "target3.png", "target4.png", "target5.png"]
@@ -103,7 +198,6 @@ class SopwithGame(arcade.Window):
                 self.targets.append(target)
 
     def get_y_from_terrain(self, x):
-        # Simple linear interpolation for now
         for i in range(len(self.terrain_points) - 1):
             x1, y1, _ = self.terrain_points[i]
             x2, y2, _ = self.terrain_points[i + 1]
@@ -113,14 +207,12 @@ class SopwithGame(arcade.Window):
         return 0  # Default to 0 if not found
 
     def on_draw(self):
-
-        self.channel0.use()
-        self.channel0.clear()
-        #self.channel1.use()
-        #self.channel1.clear()
-
+        self.shader_manager.channel0.use()
+        self.shader_manager.channel0.clear()
         self.camera.use()
         arcade.start_render()
+        self.draw_sky()
+        self.draw_background_layers()
         self.draw_terrain()
         self.plane_sprite.draw()
         self.targets.draw()
@@ -128,104 +220,35 @@ class SopwithGame(arcade.Window):
         self.bombs.draw()
 
         self.gui_camera.use()
-        self.textbox_time.draw()
+        self.textbox_debug.draw()
         self.textbox_score.draw()
 
         self.use()
         self.clear()
 
-        self.renderShader()
+        self.shader_manager.render(self.time, self.explosions, self.camera.position)
+        self.draw_fps()
 
-    def renderShader(self):
-        # Prepare data for the shader
-        delayed_explosions = [exp for exp in self.explosions if self.time - exp.start_time < 0]  
-        active_explosions = [exp for exp in self.explosions if 0 <= self.time - exp.start_time <= 2]
-        for exp in active_explosions:
-            exp.position = (
-                exp.orig_position[0] - self.camera.position[0],
-                exp.orig_position[1] - self.camera.position[1])
-            
-            #+ (self.camera.position.y - exp.camera_pos.y)
-        
-            
-        positions = [exp.position for exp in active_explosions]
-        sizes = [exp.size for exp in active_explosions]
-        times = [exp.start_time for exp in active_explosions]
-
-        # Ensure the arrays are the correct length and type
-        positions_flat = [coord for pos in positions for coord in pos] + [0.0, 0.0] * (10 - len(positions))
-        sizes_array = sizes + [0.0] * (10 - len(times))
-        times_array = times + [0.0] * (10 - len(times))
-        num_explosions = len(active_explosions)
-
-        active_explosions += delayed_explosions
-
-        # Convert to tuples
-        positions_tuple = tuple(positions_flat)
-        sizes_tuple = tuple(sizes_array)
-        times_tuple = tuple(times_array)
-
-        # Pass data to the shader
-        self.shadertoy.program["explodePositions"] = positions_tuple
-        self.shadertoy.program["explosionSizes"] = sizes_tuple
-        #self.textbox_time.text = f"{positions_tuple[0]}"
-        self.textbox_time.text = f"{len(delayed_explosions)}"
-        self.shadertoy.program["explodeTimes"] = times_tuple
-        self.shadertoy.program["numExplosions"] = num_explosions
-
-        self.shadertoy.render(time=self.time)
-
-    def load_shader(self):
-        # Size of the window
-        window_size = self.get_size()
-
-        # Create the shader toy, passing in a path for the shader source
-        shader_file_path = "multiExplosion.glsl"
-
-        self.shadertoy = Shadertoy.create_from_file(window_size, shader_file_path)
-
-        # Create the channels 0 and 1 frame buffers.
-        # Make the buffer the size of the window, with 4 channels (RGBA)
-        self.channel0 = self.shadertoy.ctx.framebuffer(
-            color_attachments=[self.shadertoy.ctx.texture(window_size, components=4)]
-        )
-        self.channel1 = self.shadertoy.ctx.framebuffer(
-            color_attachments=[self.shadertoy.ctx.texture(window_size, components=4)]
-        )
-
-        # Assign the frame buffers to the channels
-        self.shadertoy.channel_0 = self.channel0.color_attachments[0]
-        self.shadertoy.channel_1 = self.channel1.color_attachments[0]
+    def draw_fps(self):
+        current_time = time.time()
+        self.frame_count += 1
+        if current_time - self.start_time > 1:
+            self.fps = self.frame_count / (current_time - self.start_time)
+            self.start_time = current_time
+            self.frame_count = 0
+        arcade.draw_text(f"FPS: {self.fps:.2f}", SCREEN_WIDTH - 100, 10, arcade.color.GREEN_YELLOW, 12)
 
     def draw_terrain(self):
-        
         color_list = [
             (113, 255, 113),
             (123, 215, 120),
             (120, 255, 110),
             arcade.color.SEA_BLUE,
-            arcade.color.DEEP_SKY_BLUE]  # Define your color list here
+            arcade.color.DEEP_SKY_BLUE
+        ]
 
         start_x = self.camera.position[0] - TERRAIN_BUFFER
         end_x = self.camera.position[0] + SCREEN_WIDTH + TERRAIN_BUFFER
-
-        if self.sky_shape is None:
-            self.sky_shape = self.draw_textured_polygon(
-            [
-                (0, 0),
-                (0, SCREEN_HEIGHT),
-                (SCREEN_WIDTH, SCREEN_HEIGHT),
-                (SCREEN_WIDTH, 0)
-            ],
-            [
-                arcade.color.SKY_BLUE,
-                arcade.color.DEEP_SKY_BLUE,
-                arcade.color.DEEP_SKY_BLUE,
-                arcade.color.SKY_BLUE,
-            ])
-
-        self.sky_shape.center_x = self.camera.position.x
-        self.sky_shape.draw()
 
         visible_terrain = [point for point in self.terrain_points if start_x <= point[0] <= end_x]
 
@@ -237,22 +260,27 @@ class SopwithGame(arcade.Window):
                 shape.draw()
                 x0, y0, c0 = x1, y1, c1
 
+    def draw_sky(self):
+        if self.sky_shape is None:
+            self.sky_shape = self.draw_textured_polygon([
+                (0, 0),
+                (0, SCREEN_HEIGHT),
+                (SCREEN_WIDTH, SCREEN_HEIGHT),
+                (SCREEN_WIDTH, 0)],[
+                arcade.color.SKY_BLUE,
+                arcade.color.DEEP_SKY_BLUE,
+                arcade.color.DEEP_SKY_BLUE,
+                arcade.color.SKY_BLUE,
+            ])
+
+        self.sky_shape.center_x = self.camera.position.x
+        self.sky_shape.draw()
+
     def draw_textured_polygon(self, vertices, colors):
         vertex_list = arcade.create_rectangles_filled_with_colors(vertices, colors)
         shape = arcade.ShapeElementList()
         shape.append(vertex_list)
         return shape
-
-        # Draw the texture over the polygon
-        """ for i in range(len(vertices) - 1):
-            x0, y0 = vertices[i]
-            x1, y1 = vertices[i + 1]
-            width = ((x1 - x0)**2 + (y1 - y0)**2)**0.5/2
-            height = max(y0, y1)
-            angle = 0#math.degrees(math.atan2(y1 - y0, x1 - x0))
-            arcade.draw_texture_rectangle((x0 + x1) / 2, height / 2, width, height, self.terrain_texture, angle,) """
-            #arcade.draw_scaled_texture_rectangle((x0 + x1) / 2, height / 2, self.terrain_texture, 1, angle)
-
 
     def on_key_press(self, key, modifiers):
         if key == arcade.key.UP:
@@ -268,7 +296,7 @@ class SopwithGame(arcade.Window):
         elif key == arcade.key.PERIOD:
             self.plane_flipped = not self.plane_flipped
             self.plane_sprite.texture = self.plane_texture_flipped if self.plane_flipped else self.plane_texture
-            self.SetSize()
+            self.SetPlaneSize()
         elif key == arcade.key.B:
             self.drop_bomb()
         elif key == arcade.key.SPACE:
@@ -285,6 +313,9 @@ class SopwithGame(arcade.Window):
             self.right_pressed = False
 
     def drop_bomb(self):
+        #only if interval has passed
+        if self.time - self.prev_bomb_time < BOMB_DROP_INTERVAL:
+            return
         bomb = arcade.Sprite("bomb.png", scale=0.3)
         bomb.center_x = self.plane_sprite.center_x
         bomb.center_y = self.plane_sprite.center_y
@@ -293,8 +324,8 @@ class SopwithGame(arcade.Window):
         bomb.angle = self.plane_sprite.angle
         if self.plane_flipped:
             bomb.angle -= 180
-  
         self.bombs.append(bomb)
+        self.prev_bomb_time = self.time
         arcade.play_sound(self.bomb_sound)
 
     def fire_bullet(self):
@@ -302,23 +333,18 @@ class SopwithGame(arcade.Window):
         bullet.center_x = self.plane_sprite.center_x
         bullet.center_y = self.plane_sprite.center_y
         bullet.angle = self.plane_sprite.angle
-        bullet.change_x = math.cos(math.radians(bullet.angle)) * 10
-        bullet.change_y = math.sin(math.radians(bullet.angle)) * 10
+        bullet.change_x = math.cos(math.radians(bullet.angle)) * BULLET_SPEED
+        bullet.change_y = math.sin(math.radians(bullet.angle)) * BULLET_SPEED
         self.bullets.append(bullet)
         arcade.play_sound(self.fire_sound)
 
     def update(self, delta_time):
-
         self.time += delta_time
 
         if self.up_pressed:
             self.plane_angle += TILT_ANGLE
         if self.down_pressed:
             self.plane_angle -= TILT_ANGLE
-        if self.left_pressed:
-            pass
-        if self.right_pressed:
-            pass
 
         self.textbox_score.text = f"Score: {self.score}"
 
@@ -333,7 +359,7 @@ class SopwithGame(arcade.Window):
         self.scroll_viewport()
 
     def update_bombs(self, delta_time):
-        gravity = -9.8  # Gravity constant
+        gravity = -5.0  # Gravity constant
         for bomb in self.bombs:
             bomb.change_y += gravity * delta_time
             bomb.change_x *= AIR_RESISTANCE  # Apply air resistance to the x velocity
@@ -341,33 +367,32 @@ class SopwithGame(arcade.Window):
 
     def check_collisions(self):
         for bullet in self.bullets:
-            # Remove the bullet if it goes off-screen
             if (bullet.bottom <= self.get_y_from_terrain(bullet.center_x) or 
-                bullet.top < 0 or bullet.right - self.camera.position.x < 0 or 
-                bullet.left - self.camera.position.x > SCREEN_WIDTH):
+                bullet.top < 0 or bullet.right - self.camera.position[0] < 0 or 
+                bullet.left - self.camera.position[0] > SCREEN_WIDTH):
                 bullet.remove_from_sprite_lists()
             else:
                 hit_list = arcade.check_for_collision_with_list(bullet, self.targets)
                 if hit_list:
                     bullet.remove_from_sprite_lists()
                     for target in hit_list:
-                        self.addExplosion(target, 0.02)
+                        self.add_explosion(target, 0.02)
                         target.remove_from_sprite_lists()
                         self.score += 10        
         for bomb in self.bombs:
             hit_list = arcade.check_for_collision_with_list(bomb, self.targets)
             if hit_list:
-                self.addExplosion(bomb)
+                self.add_explosion(bomb)
                 bomb.remove_from_sprite_lists()
                 for target in hit_list:
-                    self.addExplosion(target, 0.05)
+                    self.add_explosion(target, 0.05)
                     target.remove_from_sprite_lists()
                     self.score += 10
             if bomb.bottom <= self.get_y_from_terrain(bomb.center_x):
-                self.addExplosion(bomb)
+                self.add_explosion(bomb)
                 bomb.remove_from_sprite_lists()
 
-    def addExplosion(self, sprite: arcade.Sprite, delay: float = 0.0):
+    def add_explosion(self, sprite: arcade.Sprite, delay: float = 0.0):
         if len(self.explosions) == MAX_EXPLOSIONS:
             self.explosions.pop(0)
         new_explosion = Explosion(
@@ -382,50 +407,22 @@ class SopwithGame(arcade.Window):
             if self.plane_sprite.bottom + 2 < self.get_y_from_terrain(self.plane_sprite.center_x):
                 self.plane_speed = 0
                 self.score -= 100
-                self.addExplosion(self.plane_sprite)
+                self.add_explosion(self.plane_sprite)
 
     def scroll_viewport(self):
         # Calculate the relative position of the plane on the screen
-        #plane_screen_x = self.plane_sprite.center_x - self.camera.position[0]
-
-        """ if self.prev_plane_x - self.plane_sprite.center_x < -1:  # Moving forward
-            camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH * 0.2
-            self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.1)
+        if self.prev_plane_x - self.plane_sprite.center_x < -1:  # Moving forward
+            camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH * 0.3
+            self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.5)
         elif self.prev_plane_x - self.plane_sprite.center_x > 1:  # Moving backward
-            camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH * 0.8
-            self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.1) """
-        #else:
-            #camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH // 2
-            #self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.1)
-
-        camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH *.5
-        self.camera.move_to((camera_pos_x, self.camera.position.y), 0.2)
-
+            camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH * 0.7
+            self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.5)
+        else:
+            camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH // 2
+            self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.5)
+            
         # Update the previous plane position
         self.prev_plane_x = self.plane_sprite.center_x
-
-    """ def scroll_viewport(self):
-        # Calculate the relative position of the plane on the screen
-        plane_screen_x = self.plane_sprite.center_x - self.camera.position[0]
-
-
-        if self.prev_plane_x - self.plane_sprite.center_x < -1:  # Moving forward
-            self.textbox_time.text = f"Moving forward {self.prev_plane_x - self.plane_sprite.center_x}"
-            
-            if plane_screen_x > SCREEN_WIDTH * 0.6:
-                camera_pos_x = self.plane_sprite.center_x + 150 
-                self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.03)
-        elif self.prev_plane_x - self.plane_sprite.center_x > 1:  # Moving backward
-            self.textbox_time.text = f"Moving back {self.prev_plane_x - self.plane_sprite.center_x}"
-            
-            #self.textbox_time.update()
-            if plane_screen_x < SCREEN_WIDTH * 0.4:
-                camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH - 150
-                self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.03)
-
-        # Update the previous plane position
-        self.prev_plane_x = self.plane_sprite.center_x """
-        
 
 def main():
     window = SopwithGame()

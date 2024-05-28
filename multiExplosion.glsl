@@ -61,7 +61,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
         explosionSize = explosionSize == 0. ? 1. : explosionSize;
 
-        explodeTime = iTime - explodeTime;
+        explodeTime = (iTime - explodeTime)/(explosionSize*1.2);
 
         vec2 center = explodePosition / iResolution.xy;
         vec2 pos = (fragCoord - explodePosition) / res;
