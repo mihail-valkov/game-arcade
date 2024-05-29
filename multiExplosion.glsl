@@ -12,20 +12,27 @@ uniform float explodeTimes[MAX_EXPLOSIONS]; // array of explosion times
 uniform int numExplosions; // number of active explosions
 
 
-float rand(vec2 co) {
-    return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
-}
+// float rand(vec2 co) {
+//     return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
+// }
 
-vec2 hash(vec2 p) {
-    p = vec2(dot(p, vec2(127.1, 311.7)),
-            dot(p, vec2(269.5, 183.3)));
-    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
-}
+// vec2 hash(vec2 p) {
+//     p = vec2(dot(p, vec2(127.1, 311.7)),
+//             dot(p, vec2(269.5, 183.3)));
+//     return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+// }
 
 vec2 Hash12_Polar(float t) {
     float a = fract(sin(t * 674.3) * 453.2) * 6.2832;
     float d = fract(sin((t + a) * 714.3) * 263.2);
     return vec2(sin(a), cos(a)) * d;
+}
+
+float glowingCircle(vec2 uv, vec2 center, float time, float size) {
+    float radius = time * size * 0.15;
+    float dist = length(uv - center);
+    float circle = smoothstep(radius, radius + 0.01, dist) - smoothstep(radius + 0.01, radius + 0.02, dist);
+    return circle * max(0, (1.0 - time * 1.5)); // Fade away quickly with expansion
 }
 
 float explosion(vec2 uv, float time, float size) {
@@ -40,6 +47,7 @@ float explosion(vec2 uv, float time, float size) {
         brightness *= smoothstep(1., 0.5, time);
         sparks += brightness / d;
     }
+    
     return sparks;
 }
 
@@ -74,8 +82,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         col += explosion(explosionCenter, explodeTime, explosionSize) *
             vec3(1., smoothstep(0.647, 0.0, explodeTime), smoothstep(0.3, 0.0, explodeTime)); // orange to red
 
+        // Add glowing circle around the explosion
+        float circleGlow = glowingCircle(uv, center, explodeTime, explosionSize);
+        explosionColor.rgb += vec3(0.647, 0.3, 0.0) * circleGlow; // glowing circle color (orange)
+
         col *= scale;
         explosionColor += vec4(col, 1.0);
+
     }
 
     fragColor = texColor + explosionColor;

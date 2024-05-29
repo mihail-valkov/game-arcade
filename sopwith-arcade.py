@@ -3,7 +3,6 @@ import math
 import time
 from arcade.experimental import Shadertoy
 
-
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 SCREEN_TITLE = "Sopwith Game with Arcade"
@@ -12,7 +11,7 @@ PLANE_SPEED_MAX = 7
 PLANE_SIZE = 128
 TILT_ANGLE = 2
 TERRAIN_BUFFER = 400  # Additional buffer for smooth terrain rendering
-AIR_RESISTANCE = 0.98  # Air resistance factor
+AIR_RESISTANCE = 0.985  # Air resistance factor
 MAX_EXPLOSIONS = 10
 BULLET_SPEED = 12
 BOMB_DROP_INTERVAL = 0.5  # Time interval between bomb drops
@@ -21,14 +20,14 @@ BACKGROUND_LAYER_1_SPEED = 0.7  # Speed for the first background layer
 BACKGROUND_LAYER_2_SPEED = 0.5  # Speed for the second background layer
 
 class ParalaxBackgroundLayer():
-  def __init__(self, image1, image2, scroll_speed):
-    self.background1 = image1
-    self.background2 = image2
-    self.scroll_speed = scroll_speed
-    self.background1_start = 0
-    self.background2_start = image1.width
+    def __init__(self, image1, image2, scroll_speed):
+        self.background1 = image1
+        self.background2 = image2
+        self.scroll_speed = scroll_speed
+        self.background1_start = 0
+        self.background2_start = image1.width
 
-  def draw_background(self, camera: arcade.Camera, y = 0):
+    def draw_background(self, camera: arcade.Camera, y = 0):
         distance = camera.position.x * self.scroll_speed
 
         temp = camera.position.x * (1 - self.scroll_speed)
@@ -137,6 +136,7 @@ class SopwithGame(arcade.Window):
         self.start_time = time.time()
         self.frame_count = 0
         self.fps = 0
+        self.plane_crashed = False
 
     def setup(self):
         self.load_terrain()
@@ -283,6 +283,9 @@ class SopwithGame(arcade.Window):
         return shape
 
     def on_key_press(self, key, modifiers):
+        if self.plane_crashed:
+            return  # Do nothing if the plane has crashed
+
         if key == arcade.key.UP:
             self.up_pressed = True
         elif key == arcade.key.DOWN:
@@ -348,14 +351,16 @@ class SopwithGame(arcade.Window):
 
         self.textbox_score.text = f"Score: {self.score}"
 
-        self.plane_sprite.angle = self.plane_angle
-        self.plane_sprite.change_x = math.cos(math.radians(self.plane_angle)) * self.plane_speed
-        self.plane_sprite.change_y = math.sin(math.radians(self.plane_angle)) * self.plane_speed
+        if not self.plane_crashed:
+            self.plane_sprite.angle = self.plane_angle
+            self.plane_sprite.change_x = math.cos(math.radians(self.plane_angle)) * self.plane_speed
+            self.plane_sprite.change_y = math.sin(math.radians(self.plane_angle)) * self.plane_speed
+
         self.plane_sprite.update()
         self.bullets.update()
         self.update_bombs(delta_time)
         self.check_collisions()
-        self.check_crash()
+        self.check_crash(delta_time)
         self.scroll_viewport()
 
     def update_bombs(self, delta_time):
@@ -393,21 +398,59 @@ class SopwithGame(arcade.Window):
                 bomb.remove_from_sprite_lists()
 
     def add_explosion(self, sprite: arcade.Sprite, delay: float = 0.0):
+        explosion_size = (sprite.width + sprite.height) / 100
         if len(self.explosions) == MAX_EXPLOSIONS:
             self.explosions.pop(0)
         new_explosion = Explosion(
             sprite.position,
-            (sprite.width + sprite.height) / 100,
+            explosion_size,
             self.camera.position,
             self.time + delay)
         self.explosions.append(new_explosion)
 
-    def check_crash(self):
-        if self.plane_speed > 0:
+        # Check if the plane is near the explosion
+        if not self.plane_crashed:
+            distance = math.hypot(self.plane_sprite.center_x - sprite.center_x, self.plane_sprite.center_y - sprite.center_y)
+            if distance < 70 * explosion_size:  # Arbitrary distance threshold for explosion effect
+                self.plane_crashed = True
+                self.plane_speed = 0
+                self.score -= 100
+                self.add_explosion(self.plane_sprite, 0.1)
+
+    def check_crash(self, delta_time):
+        if not self.plane_crashed:
             if self.plane_sprite.bottom + 2 < self.get_y_from_terrain(self.plane_sprite.center_x):
+                self.plane_crashed = True
                 self.plane_speed = 0
                 self.score -= 100
                 self.add_explosion(self.plane_sprite)
+        
+        # Check collision with targets
+        if not self.plane_crashed:
+            hit_list = arcade.check_for_collision_with_list(self.plane_sprite, self.targets)
+            if hit_list:
+                self.plane_crashed = True
+                self.plane_speed = 0
+                self.score -= 100
+                for target in hit_list:
+                    self.add_explosion(target, 0.02)
+                    target.remove_from_sprite_lists()
+
+        # If the plane has crashed, apply gravity and air resistance
+        if self.plane_crashed:
+            self.plane_sprite.change_y -= 2.0 * delta_time  # Gravity
+            #change also the plane angle to face the ground
+            self.plane_sprite.angle = min(160, self.plane_sprite.angle - 25.0 * delta_time)
+            self.plane_sprite.change_x *= AIR_RESISTANCE
+            self.plane_sprite.update()
+            #if the plane hits the ground then stop
+            if self.plane_sprite.bottom <= self.get_y_from_terrain(self.plane_sprite.center_x):
+                #set plane to initial position as in setup_plane
+                self.plane_sprite.change_x = 0
+                self.plane_sprite.change_y = 0
+                self.plane_sprite.angle = 0
+                self.plane_sprite.center_y = 15 + self.get_y_from_terrain(self.plane_sprite.center_x) + self.plane_sprite.height / 2
+                self.plane_crashed = False
 
     def scroll_viewport(self):
         # Calculate the relative position of the plane on the screen
