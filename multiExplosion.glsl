@@ -1,4 +1,5 @@
 #define MAX_EXPLOSIONS 10
+#define EXPLOSION_DURATION 1.5
 
 float seed = 0.32; // starting seed
 const float size1_Particles = 33.0; // change particle count
@@ -29,10 +30,11 @@ vec2 Hash12_Polar(float t) {
 }
 
 float glowingCircle(vec2 uv, vec2 center, float time, float size) {
-    float radius = time * size * 0.15;
+    float normalized_time = time / EXPLOSION_DURATION;
+    float radius = (1. - pow((1. - normalized_time), 16.)) * size * 0.10;
     float dist = length(uv - center);
-    float circle = smoothstep(radius, radius + 0.01, dist) - smoothstep(radius + 0.01, radius + 0.02, dist);
-    return circle * max(0, (1.0 - time * 1.5)); // Fade away quickly with expansion
+    float circle = smoothstep(radius, radius + 0.003, dist) - smoothstep(radius + 0.005, radius + 0.008, dist);
+    return circle * max(0, 1.01 - radius / (size * 0.10)); // Fade away quickly with expansion
 }
 
 float explosion(vec2 uv, float time, float size) {
