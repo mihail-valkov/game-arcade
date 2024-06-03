@@ -3,7 +3,6 @@ import math
 import time
 from arcade.experimental import Shadertoy
 
-
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 SCREEN_TITLE = "Sopwith Game with Arcade"
@@ -22,9 +21,14 @@ EXPLOSION_DURATION = 1.5  # Duration of the explosion effect
 BACKGROUND_LAYER_1_SPEED = 0.7  # Speed for the first background layer
 BACKGROUND_LAYER_2_SPEED = 0.5  # Speed for the second background layer
 
+# Determine the relative drop point in the plane's local coordinate system
+BOMB_DROP_OFFSET_X = -10  # offset from the plane's center in the x-direction
+BOMB_DROP_OFFSET_Y = -10  # offset from the plane's center in the y-direction
+BOMB_SCALE = 0.3
+
 DEBUG_DRAW = False
-DRAW_FPS = False
-DEBUG_COLOR = (255, 0, 0, 32)
+DRAW_FPS = True
+DEBUG_COLOR = (255, 0, 0, 64)
 
 class ParalaxBackgroundLayer():
     def __init__(self, image1, image2, scroll_speed):
@@ -126,7 +130,7 @@ class SopwithGame(arcade.Window):
         self.camera = arcade.Camera(SCREEN_WIDTH, SCREEN_HEIGHT)
         self.gui_camera = arcade.Camera(SCREEN_WIDTH, SCREEN_HEIGHT)
         self.plane_sprite = None
-        self.plane_speed = PLANE_SPEED_MIN
+        self.plane_speed = 0
         self.plane_angle = 0
         self.terrain_points = []
         self.targets = arcade.SpriteList()
@@ -261,6 +265,8 @@ class SopwithGame(arcade.Window):
         self.targets.draw()
         self.bullets.draw()
         self.bombs.draw()
+        if DEBUG_DRAW:
+            self.bombs.draw_hit_boxes(DEBUG_COLOR)
         
         if DEBUG_DRAW:
             self.draw_explosion_zones()  # Draw the explosion kill zones
@@ -276,6 +282,12 @@ class SopwithGame(arcade.Window):
         self.shader_manager.render(self.time, self.explosions, self.camera.position)
         if DRAW_FPS:
             self.draw_fps()
+
+        if DEBUG_DRAW:
+            angle = math.radians(self.plane_angle)
+            bomb_x = self.plane_sprite.center_x + BOMB_DROP_OFFSET_X * math.cos(angle) - BOMB_DROP_OFFSET_Y * math.sin(angle)
+            bomb_y = self.plane_sprite.center_y + BOMB_DROP_OFFSET_X * math.sin(angle) + BOMB_DROP_OFFSET_Y * math.cos(angle)
+            arcade.draw_circle_filled(bomb_x - self.camera.position.x, bomb_y - self.camera.position.y, 2, DEBUG_COLOR)
 
     def draw_explosion_zones(self):
         for explosion in self.explosions:
@@ -351,7 +363,10 @@ class SopwithGame(arcade.Window):
             self.plane_speed = max(PLANE_SPEED_MIN, self.plane_speed - 1)
         elif key == arcade.key.RIGHT:
             self.right_pressed = True
-            self.plane_speed = min(PLANE_SPEED_MAX, self.plane_speed + 1)
+            if self.plane_speed == 0:
+                self.plane_speed = PLANE_SPEED_MIN
+            else:
+                self.plane_speed = min(PLANE_SPEED_MAX, self.plane_speed + 1)
         elif key == arcade.key.PERIOD:
             self.plane_flipped = not self.plane_flipped
             self.set_plane_texture()
@@ -374,25 +389,28 @@ class SopwithGame(arcade.Window):
         #only if interval has passed
         if self.time - self.prev_bomb_time < BOMB_DROP_INTERVAL:
             return
-        bomb = arcade.Sprite("bomb.png", scale=0.3)
-        #bomb.center_x = self.plane_sprite.center_x
-        
-        #deteremine the bomb center position that should be at the bottom based on the plane angle
-        bomb.center_x = self.plane_sprite.center_x - 10 * math.cos(math.radians(self.plane_angle + 90))
-        bomb.center_y = self.plane_sprite.center_y - 10 * math.sin(math.radians(self.plane_angle + 90))
+        bomb = arcade.Sprite("bomb.png", BOMB_SCALE)
 
-        # if ((self.plane_sprite.angle + 360) % 360) > 180:
-        #     bomb.center_y = self.plane_sprite.top
-        # else:
-        #     bomb.center_y = self.plane_sprite.bottom + 10
+        # Rotate the drop point to the plane's angle to get the world coordinates
+        angle = math.radians(self.plane_angle)
+        bomb_x = self.plane_sprite.center_x + BOMB_DROP_OFFSET_X * math.cos(angle) - BOMB_DROP_OFFSET_Y * math.sin(angle)
+        bomb_y = self.plane_sprite.center_y + BOMB_DROP_OFFSET_X * math.sin(angle) + BOMB_DROP_OFFSET_Y * math.cos(angle)
+        
+        bomb.center_x = bomb_x
+        bomb.center_y = bomb_y
+
         bomb.change_x = self.plane_sprite.change_x * 1.1
         bomb.change_y = self.plane_sprite.change_y * 0.8
-        bomb.angle =  self.plane_sprite.angle + 90
+
+        bomb.angle = self.plane_sprite.angle + 80
+
         if self.plane_flipped:
             bomb.angle -= 180
+
         self.bombs.append(bomb)
         self.prev_bomb_time = self.time
         arcade.play_sound(self.bomb_sound)
+
 
     def fire_bullet(self):
         bullet = arcade.SpriteSolidColor(5, 5, arcade.color.YELLOW)
@@ -472,6 +490,16 @@ class SopwithGame(arcade.Window):
                     self.add_explosion(target, 0.05)
                     target.remove_from_sprite_lists()
                     self.score += 10
+            # Check for collision between the plane and the bomb
+            if (self.time - self.prev_bomb_time > 0.1 and
+                arcade.check_for_collision(bomb, self.plane_sprite)):
+                self.plane_crashed = True
+                self.plane_speed = 0
+                self.score -= 100
+                self.curr_plane_explosion = self.add_explosion(self.plane_sprite, 0.05)
+                self.add_explosion(bomb)
+                bomb.remove_from_sprite_lists()
+
             if bomb.bottom <= self.get_y_from_terrain(bomb.center_x):
                 self.add_explosion(bomb)
                 bomb.remove_from_sprite_lists()
@@ -567,15 +595,18 @@ class SopwithGame(arcade.Window):
 
     def scroll_viewport(self):
         # Calculate the relative position of the plane on the screen
-        if self.prev_plane_x - self.plane_sprite.center_x < -1:  # Moving forward
+        """ if self.prev_plane_x - self.plane_sprite.center_x < -1:  # Moving forward
             camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH * 0.3
             self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.5)
         elif self.prev_plane_x - self.plane_sprite.center_x > 1:  # Moving backward
             camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH * 0.7
             self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.5)
         else:
-            camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH // 2
-            self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.5)
+            camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH // 2 
+            self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.5) """
+        
+        camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH // 2 
+        self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.5)
             
         # Update the previous plane position
         self.prev_plane_x = self.plane_sprite.center_x

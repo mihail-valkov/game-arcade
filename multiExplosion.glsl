@@ -31,10 +31,10 @@ vec2 Hash12_Polar(float t) {
 
 float glowingCircle(vec2 uv, vec2 center, float time, float size) {
     float normalized_time = time / EXPLOSION_DURATION;
-    float radius = (1. - pow((1. - normalized_time), 16.)) * size * 0.10;
+    float radius = (1. - pow((1. - normalized_time), 16.)) * size * 0.12;
     float dist = length(uv - center);
     float circle = smoothstep(radius, radius + 0.003, dist) - smoothstep(radius + 0.005, radius + 0.008, dist);
-    return circle * max(0, 1.01 - radius / (size * 0.10)); // Fade away quickly with expansion
+    return circle * max(0, 1.01 - radius / (size * 0.12)); // Fade away quickly with expansion
 }
 
 float explosion(vec2 uv, float time, float size) {
