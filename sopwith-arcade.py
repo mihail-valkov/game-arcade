@@ -728,6 +728,17 @@ class SopwithGame(arcade.Window):
 
     def scroll_viewport(self):
         # Calculate the relative position of the plane on the screen
+
+        """ if self.prev_plane_x - self.plane_sprite.center_x < -1:  # Moving forward
+            camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH * 0.3
+            self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.5)
+        elif self.prev_plane_x - self.plane_sprite.center_x > 1:  # Moving backward
+            camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH * 0.7
+            self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.5)
+        else:
+            camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH // 2 
+            self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.5) """
+
         camera_pos_x = self.plane_sprite.center_x - SCREEN_WIDTH // 2
         self.camera.move_to((camera_pos_x, self.camera.position[1]), 0.5)
 
