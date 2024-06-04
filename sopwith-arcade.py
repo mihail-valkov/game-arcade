@@ -17,8 +17,8 @@ MAX_EXPLOSIONS = 10
 BULLET_SPEED = 12
 BOMB_DROP_INTERVAL = 0.5  # Time interval between bomb drops
 EXPLOSION_DURATION = 1.5  # Duration of the explosion effect
-BULLET_FADE_TIME = 2.0  # Time interval for bullets to fade away
-TARGET_SHOOT_RANGE = 300  # Shooting range for the targets
+BULLET_FADE_TIME = 3  # Time interval for bullets to fade away
+TARGET_SHOOT_RANGE = 370  # Shooting range for the targets
 
 BACKGROUND_LAYER_1_SPEED = 0.7  # Speed for the first background layer
 BACKGROUND_LAYER_2_SPEED = 0.5  # Speed for the second background layer
@@ -122,7 +122,6 @@ class ShaderManager:
         self.shadertoy.program["numExplosions"] = num_explosions
 
         self.shadertoy.render(time=time)
-
 
 class SopwithGame(arcade.Window):
     def __init__(self):
@@ -414,7 +413,7 @@ class SopwithGame(arcade.Window):
         arcade.play_sound(self.bomb_sound)
 
     def fire_bullet(self):
-        bullet = arcade.SpriteSolidColor(5, 5, arcade.color.YELLOW)
+        bullet = arcade.SpriteCircle(2, arcade.color.YELLOW)
         bullet.center_x = self.plane_sprite.center_x
         bullet.center_y = self.plane_sprite.center_y
         bullet.angle = self.plane_sprite.angle
@@ -425,15 +424,53 @@ class SopwithGame(arcade.Window):
         arcade.play_sound(self.fire_sound)
 
     def target_fire_bullet(self, target):
-        bullet = arcade.SpriteSolidColor(5, 5, arcade.color.RED)
+        # Leading aim calculation
+        bullet_speed = BULLET_SPEED / 2.5  # Targets have slower bullets
+
+        bullet = arcade.SpriteCircle(3, arcade.color.RED)
         bullet.center_x = target.center_x
         bullet.center_y = target.center_y
-        bullet.angle = math.degrees(math.atan2(self.plane_sprite.center_y - target.center_y, self.plane_sprite.center_x - target.center_x))
-        bullet.change_x = math.cos(math.radians(bullet.angle)) * (BULLET_SPEED / 1.8)  # Targets have slower bullets
-        bullet.change_y = math.sin(math.radians(bullet.angle)) * (BULLET_SPEED / 1.8)
+
+        # Calculate leading position considering bullet speed and gravity
+        leading_position = self.calculate_leading_position(
+            target, self.plane_sprite, bullet_speed, gravity=-2.0
+        )
+
+        bullet.angle = math.degrees(math.atan2(
+            leading_position[1] - target.center_y,
+            leading_position[0] - target.center_x
+        ))
+
+        bullet.change_x = math.cos(math.radians(bullet.angle)) * bullet_speed
+        bullet.change_y = math.sin(math.radians(bullet.angle)) * bullet_speed
         bullet.start_time = self.time
         self.target_bullets.append(bullet)
         #arcade.play_sound(self.fire_sound)
+
+    def calculate_leading_position(self, target, plane, bullet_speed, gravity):
+        target_position = plane.position
+        target_velocity = (plane.change_x, plane.change_y)
+        target_distance = math.dist(target.position, target_position)
+
+        # Calculate the time it would take for the bullet to reach the target without gravity
+        time_to_reach = target_distance / bullet_speed
+
+        # Adjust the leading position by the target's velocity over that time
+        aim_position = (
+            target_position[0] + target_velocity[0] * time_to_reach,
+            target_position[1] + target_velocity[1] * time_to_reach
+        )
+
+        # Calculate the effect of gravity over the time it takes for the bullet to reach the target
+        gravity_effect = 0.5 * gravity * (time_to_reach ** 2) / 60 #Compensate for 60 FPS
+        aim_position = (
+            aim_position[0],
+            aim_position[1] - gravity_effect
+        )
+
+        #set debug text to aim position, gravity effect and time to reach format everything with .2f
+        self.textbox_debug.text = f"Aim: {aim_position[0]:.2f}, {aim_position[1]:.2f} | Gravity Eff: {gravity_effect:.2f} | Time: {time_to_reach:.2f}"
+        return aim_position
 
     def update(self, delta_time):
         self.time += delta_time
@@ -451,8 +488,9 @@ class SopwithGame(arcade.Window):
             self.plane_sprite.change_y = math.sin(math.radians(self.plane_angle)) * self.plane_speed
             for target in self.targets:
                 #check if target is in the screen and within range to shoot
-                if (math.hypot(target.center_x - self.plane_sprite.center_x, 
-                               target.center_y - self.plane_sprite.center_y) < TARGET_SHOOT_RANGE):
+                if (math.hypot(
+                    target.center_x - self.plane_sprite.center_x, 
+                    target.center_y - self.plane_sprite.center_y) < TARGET_SHOOT_RANGE):
                     if self.time - target.last_shot_time > target.shoot_interval:
                         self.target_fire_bullet(target)
                         target.last_shot_time = self.time
@@ -495,8 +533,9 @@ class SopwithGame(arcade.Window):
         gravity = -2.0  # Gravity constant
         for bullet in self.target_bullets:
             bullet.change_y += gravity * delta_time
-            bullet.change_x *= AIR_RESISTANCE # Apply air resistance to the x velocity
-            bullet.color = (255, 0, 0, max(1, 255 - 255 * (self.time - bullet.start_time) / BULLET_FADE_TIME))    
+            #bullet.change_x *= AIR_RESISTANCE # Apply air resistance to the x velocity
+            normalized_time = (self.time - bullet.start_time) / BULLET_FADE_TIME
+            bullet.color = (255, 0, 0, max(1, 255 - 255 * ((normalized_time) ** 4)))
             bullet.update()
             # Remove bullets that exceed their fade time
             if (self.time - bullet.start_time >= BULLET_FADE_TIME):
@@ -543,13 +582,21 @@ class SopwithGame(arcade.Window):
 
         # Check for collisions between target bullets and the plane
         for bullet in self.target_bullets:
-            if (arcade.check_for_collision(bullet, self.plane_sprite) or
-                self.time - bullet.start_time > BULLET_FADE_TIME):
+            if self.time - bullet.start_time > BULLET_FADE_TIME:
                 bullet.remove_from_sprite_lists()
-                self.plane_crashed = True
-                self.plane_speed = 0
-                self.score -= 100
-                self.curr_plane_explosion = self.add_explosion(self.plane_sprite, 0.05)
+                continue
+            if arcade.check_for_collision(bullet, self.plane_sprite):
+                bullet.remove_from_sprite_lists()
+                # self.plane_crashed = True
+                self.plane_speed = 2
+                # self.score -= 100
+                #self.curr_plane_explosion = self.add_explosion(self.plane_sprite, 0.05)
+                self.curr_plane_explosion = self.add_explosion(bullet)
+            for bomb in self.bombs:
+                if arcade.check_for_collision(bullet, bomb):
+                    bullet.remove_from_sprite_lists()
+                    bomb.remove_from_sprite_lists()
+                    self.add_explosion(bomb)
 
     def add_explosion(self, sprite: arcade.Sprite, delay: float = 0.0):
         explosion_size = (sprite.width + sprite.height) / 80
