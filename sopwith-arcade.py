@@ -363,7 +363,7 @@ class SopwithGame(arcade.Window):
         if self.plane.top > SCREEN_HEIGHT:
             self.plane.top = SCREEN_HEIGHT
 
-        # Check if self.curr_plane_explosion has ended and reset it        
+        # Check if self.curr_plane_explosion has ended and reset it
         if self.curr_plane_explosion is not None and self.time - self.curr_plane_explosion.start_time > EXPLOSION_DURATION:
             self.curr_plane_explosion = None
 
@@ -401,6 +401,11 @@ class SopwithGame(arcade.Window):
             bullet.change_y += GRAVITY * delta_time
             bullet.change_x *= AIR_RESISTANCE
             bullet.change_y *= AIR_RESISTANCE
+            if (self.time - bullet.start_time >= BULLET_FADE_TIME):
+                bullet.remove_from_sprite_lists()
+                continue
+            normalized_time = (self.time - bullet.start_time) / BULLET_FADE_TIME
+            bullet.color = (255, 255, 0, max(1, 255 - 255 * ((normalized_time) ** 8)))
         self.bullets.update()
 
     def update_target_bullets(self, delta_time):
@@ -439,6 +444,7 @@ class SopwithGame(arcade.Window):
                     self.add_explosion(target, 0.05)
                     target.remove_from_sprite_lists()
                     self.score += 10
+
             # Check for collision between the plane and the bomb
             if (self.time - self.prev_bomb_time > 0.15 and arcade.check_for_collision(bomb, self.plane)):
                 self.crash_plane(self.plane, 0.1)
@@ -534,7 +540,7 @@ class SopwithGame(arcade.Window):
         if not self.plane_crashed:
             self.plane_crashed = True
             self.plane.speed = 0
-            self.score -= 100
+            self.score -= 15
             explosion = self.add_explosion(sprite, delay)
             if self.curr_plane_explosion is None:
                 self.curr_plane_explosion = explosion
