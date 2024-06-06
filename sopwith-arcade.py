@@ -148,7 +148,7 @@ class SopwithGame(arcade.Window):
         if DEBUG_DRAW:
             angle = math.radians(self.plane.angle)
             bomb_x = self.plane.center_x + BOMB_DROP_OFFSET_X * math.cos(angle) - BOMB_DROP_OFFSET_Y * math.sin(angle)
-            bomb_y = self.plane_sprite.center_y + BOMB_DROP_OFFSET_X * math.sin(angle) + BOMB_DROP_OFFSET_Y * math.cos(angle)
+            bomb_y = self.plane.center_y + BOMB_DROP_OFFSET_X * math.sin(angle) + BOMB_DROP_OFFSET_Y * math.cos(angle)
             arcade.draw_circle_filled(bomb_x - self.camera.position.x, bomb_y - self.camera.position.y, 2, DEBUG_COLOR)
 
     def draw_explosion_zones(self):
