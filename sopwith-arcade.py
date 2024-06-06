@@ -7,6 +7,7 @@ from shader_manager import ShaderManager
 from plane import Plane
 from bullet import Bullet
 from explosion import *
+from target import Target  # Import the Target class
 
 class SopwithGame(arcade.Window):
     def __init__(self):
@@ -93,10 +94,7 @@ class SopwithGame(arcade.Window):
                 x, targetN = map(int, line.split(","))
                 y = self.get_y_from_terrain(x)
                 target_image = target_images[targetN % len(target_images)]
-                target = arcade.Sprite(target_image, center_x=x, scale=TARGET_SCALE)
-                target.bottom = y
-                target.shoot_interval = 2.0
-                target.last_shot_time = 0
+                target = Target(target_image, x, y)
                 self.targets.append(target)
 
     def get_y_from_terrain(self, x):
@@ -333,7 +331,7 @@ class SopwithGame(arcade.Window):
                 sprite.target = target
                 sprite.center_x = aim_position[0]
                 sprite.center_y = aim_position[1]
-                sprite.decay = BULLET_FADE_TIME
+                sprite.decay = BULLET_FADE_TIME_TARGET
 
         return aim_position
 
@@ -363,7 +361,7 @@ class SopwithGame(arcade.Window):
         if self.plane.top > SCREEN_HEIGHT:
             self.plane.top = SCREEN_HEIGHT
 
-        # Check if self.curr_plane_explosion has ended and reset it
+        # Check if self.curr_plane_explosion has ended and reset it        
         if self.curr_plane_explosion is not None and self.time - self.curr_plane_explosion.start_time > EXPLOSION_DURATION:
             self.curr_plane_explosion = None
 
@@ -399,24 +397,22 @@ class SopwithGame(arcade.Window):
     def update_bullets(self, delta_time):
         for bullet in self.bullets:
             bullet.change_y += GRAVITY * delta_time
-            bullet.change_x *= AIR_RESISTANCE
+            # Apply air resistance only to the y velocity to simulate gravity effect
             bullet.change_y *= AIR_RESISTANCE
-            if (self.time - bullet.start_time >= BULLET_FADE_TIME):
-                bullet.remove_from_sprite_lists()
-                continue
-            normalized_time = (self.time - bullet.start_time) / BULLET_FADE_TIME
+            # Use the normalized time to calculate alpha fading effect
+            normalized_time = (self.time - bullet.start_time) / BULLET_FADE_TIME_PLANE
             bullet.color = (255, 255, 0, max(1, 255 - 255 * ((normalized_time) ** 8)))
-        self.bullets.update()
+            bullet.update()
 
     def update_target_bullets(self, delta_time):
         for bullet in self.target_bullets:
-            if (self.time - bullet.start_time >= BULLET_FADE_TIME):
+            if (self.time - bullet.start_time >= BULLET_FADE_TIME_TARGET):
                 bullet.remove_from_sprite_lists()
                 continue
             bullet.change_y *= AIR_RESISTANCE
             bullet.change_x *= AIR_RESISTANCE
             bullet.change_y += GRAVITY * delta_time
-            normalized_time = (self.time - bullet.start_time) / BULLET_FADE_TIME
+            normalized_time = (self.time - bullet.start_time) / BULLET_FADE_TIME_TARGET
             bullet.color = (255, 0, 0, max(1, 255 - 255 * ((normalized_time) ** 8)))
             bullet.update()
 
@@ -425,7 +421,7 @@ class SopwithGame(arcade.Window):
             if (bullet.bottom <= self.get_y_from_terrain(bullet.center_x) or 
                 bullet.top < 0 or bullet.right - self.camera.position[0] < 0 or 
                 bullet.left - self.camera.position[0] > SCREEN_WIDTH or
-                self.time - bullet.start_time > BULLET_FADE_TIME):
+                self.time - bullet.start_time > BULLET_FADE_TIME_PLANE):
                 bullet.remove_from_sprite_lists()
             else:
                 hit_list = arcade.check_for_collision_with_list(bullet, self.targets)
@@ -444,7 +440,6 @@ class SopwithGame(arcade.Window):
                     self.add_explosion(target, 0.05)
                     target.remove_from_sprite_lists()
                     self.score += 10
-
             # Check for collision between the plane and the bomb
             if (self.time - self.prev_bomb_time > 0.15 and arcade.check_for_collision(bomb, self.plane)):
                 self.crash_plane(self.plane, 0.1)
@@ -456,7 +451,7 @@ class SopwithGame(arcade.Window):
                 bomb.remove_from_sprite_lists()
 
         for bullet in self.target_bullets:
-            if self.time - bullet.start_time > BULLET_FADE_TIME:
+            if self.time - bullet.start_time > BULLET_FADE_TIME_TARGET:
                 bullet.remove_from_sprite_lists()
                 continue
             if arcade.check_for_collision(bullet, self.plane):
