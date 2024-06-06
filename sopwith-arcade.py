@@ -262,7 +262,7 @@ class SopwithGame(arcade.Window):
 
         bomb.change_x = self.plane.change_x * 1.1
         bomb.change_y = self.plane.change_y * 1.1
-
+ 
         bomb.angle = self.plane.angle + 80
 
         if self.plane.flipped:
