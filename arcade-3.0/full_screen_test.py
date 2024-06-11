@@ -1,0 +1,121 @@
+"""
+Use sprites to scroll around a large screen.
+
+Simple program to show basic sprite usage.
+
+Artwork from https://kenney.nl
+
+If Python and Arcade are installed, this example can be run from the command line with:
+python -m arcade.examples.full_screen_example
+"""
+
+import arcade
+
+SPRITE_SCALING = 0.5
+
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
+SCREEN_TITLE = "Full Screen Example"
+
+# How many pixels to keep as a minimum margin between the character
+# and the edge of the screen.
+VIEWPORT_MARGIN = 40
+
+MOVEMENT_SPEED = 5
+
+
+class MyGame(arcade.Window):
+    """ Main application class. """
+
+    def __init__(self):
+        """
+        Initializer
+        """
+        # Open a window in full screen mode. Remove fullscreen=True if
+        # you don't want to start this way.
+        super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, resizable=True, fullscreen=False)
+
+        self.width, self.height = SCREEN_WIDTH, SCREEN_HEIGHT
+
+        # This will get the size of the window, and set the viewport to match.
+        # So if the window is 1000x1000, then so will our viewport. If
+        # you want something different, then use those coordinates instead.
+        self.background_color = arcade.color.AMAZON
+        self.example_image = arcade.load_texture(":resources:images/tiles/boxCrate_double.png")
+
+        # The camera used to update the viewport and projection on screen resize.
+        # The position needs to be set to the bottom left corner.
+        self.cam = arcade.camera.Camera2D(position=(0.0, 0.0))
+
+    def on_draw(self):
+        """
+        Render the screen.
+        """
+
+        self.clear()
+
+        # Get viewport dimensions
+        screen_width, screen_height = int(self.cam.projection_width), int(self.cam.projection_height)
+
+        text_size = 18
+        # Draw text on the screen so the user has an idea of what is happening
+        arcade.draw_text("Press F to toggle between full screen and windowed mode, unstretched.",
+                         screen_width // 2, screen_height // 2 - 20,
+                         arcade.color.WHITE, text_size, anchor_x="center")
+        arcade.draw_text("Press S to toggle between full screen and windowed mode, stretched.",
+                         screen_width // 2, screen_height // 2 + 20,
+                         arcade.color.WHITE, text_size, anchor_x="center")
+
+        # Draw some boxes on the bottom so we can see how they change
+        for x in range(64, 800, 128):
+            y = 64
+            width = 128
+            height = 128
+            arcade.draw_texture_rectangle(x, y, width, height, self.example_image)
+
+    def on_key_press(self, key, modifiers):
+        """Called whenever a key is pressed. """
+        self.set_fullscreen(not self.fullscreen)
+        # if key == arcade.key.F:
+        #     # User hits f. Flip between full and not full screen.
+        #     self.set_fullscreen(not self.fullscreen)
+
+        #     # Get the window coordinates. Match viewport to window coordinates
+        #     # so there is a one-to-one mapping.
+        #     self.cam.projection = 0, self.width, 0, self.height
+        #     self.cam.viewport = 0, 0, self.width, self.height
+        #     self.cam.use()
+
+        # if key == arcade.key.S:
+        #     # User hits s. Flip between full and not full screen.
+        #     self.set_fullscreen(not self.fullscreen)
+
+        #     # Instead of a one-to-one mapping, stretch/squash window to match the
+        #     # constants. This does NOT respect aspect ratio. You'd need to
+        #     # do a bit of math for that.
+        #     self.cam.projection = 0, SCREEN_WIDTH, 0, SCREEN_HEIGHT
+        #     self.cam.viewport = 0, 0, self.width, self.height
+        #     self.cam.use()
+
+    def on_resize(self, width, height):
+        # Instead of a one-to-one mapping, stretch/squash window to match the
+        # constants. This does NOT respect aspect ratio. You'd need to
+        # do a bit of math for that.
+        new_aspect = width / height
+
+        #set new self.cam.projection respecting the same virtual height and keeping aspect ratio
+        self.cam.projection = 0, SCREEN_HEIGHT * new_aspect, 0, SCREEN_HEIGHT
+        
+            
+        self.cam.viewport = 0, 0, self.width, self.height
+        self.cam.use()
+
+
+def main():
+    """ Main function """
+    MyGame()
+    arcade.run()
+
+
+if __name__ == "__main__":
+    main()

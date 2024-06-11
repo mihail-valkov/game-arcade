@@ -1,0 +1,107 @@
+import arcade
+
+# Constants
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
+SCREEN_TITLE = "Platformer with Parallax Background"
+
+# Scaling factors for the player and background movement
+PLAYER_MOVEMENT_SPEED = 20
+BACKGROUND_SCROLL_SPEED = 0.6
+
+class ParalaxBackgroundLayer():
+  def __init__(self, image1, image2, scroll_speed):
+    self.background = image1
+    self.background1 = image2
+    self.scroll_speed = scroll_speed
+    self.background1Start = 0
+    self.background2Start = image1.width
+
+  def draw_background(self, camera):
+        distance = camera.position.x * self.scroll_speed
+
+        temp = camera.position.x * (1 - self.scroll_speed)
+
+        if temp > self.background1Start + self.background.width:
+            self.background1Start += self.background.width + self.background1.width
+        elif temp < self.background1Start - self.background1.width:
+            self.background1Start -= self.background.width + self.background1.width
+
+        if temp > self.background2Start + self.background1.width:
+            self.background2Start += self.background.width + self.background1.width
+        elif temp < self.background2Start - self.background.width:
+            self.background2Start -= self.background.width + self.background1.width
+
+        # Calculate the position of the background
+        arcade.draw_lrwh_rectangle_textured(self.background1Start + distance, 0, self.background.width, self.background.height, self.background)
+        arcade.draw_lrwh_rectangle_textured(self.background2Start + distance, 0, self.background1.width, self.background.height, self.background1)
+
+
+class MyGame(arcade.Window):
+    def __init__(self):
+        super().__init__(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
+        
+        self.player_sprite = None
+        self.player_list = None
+        self.background = None
+        self.camera = None
+        self.camera_x = 0
+
+    
+
+    def setup(self):
+        # Initialize player
+        self.player_list = arcade.SpriteList()
+        self.player_sprite = arcade.Sprite(":resources:images/animated_characters/female_person/femalePerson_idle.png", scale=1)
+        self.player_sprite.center_x = SCREEN_WIDTH // 2
+        self.player_sprite.center_y = SCREEN_HEIGHT // 2
+        self.player_list.append(self.player_sprite)
+
+        
+        # Load background
+        self.background = arcade.load_texture(":resources:images/backgrounds/abstract_1.jpg")
+        self.background1 = arcade.load_texture(":resources:images/backgrounds/abstract_2.jpg")
+
+
+        self.paralaxLayer = ParalaxBackgroundLayer(self.background, self.background1, BACKGROUND_SCROLL_SPEED)
+
+        # Set up camera
+        self.camera = arcade.Camera(SCREEN_WIDTH, SCREEN_HEIGHT)
+
+    def on_draw(self):
+        arcade.start_render()
+        
+        self.camera.use()
+        # Draw background with parallax scrolling effect
+        self.paralaxLayer.draw_background(self.camera)
+        
+        # Draw player
+        self.player_list.draw()
+
+    def on_update(self, delta_time):
+        # Update player position
+        self.player_sprite.update()
+        
+        # Simulate player movement to the right
+        self.camera_x = self.player_sprite.center_x - SCREEN_WIDTH // 2
+
+        # Update camera position to follow the player
+        self.camera.move_to((self.camera_x, 0), 1)
+
+    def on_key_press(self, key, modifiers):
+        if key == arcade.key.LEFT:
+            self.player_sprite.change_x = -PLAYER_MOVEMENT_SPEED
+        elif key == arcade.key.RIGHT:
+            self.player_sprite.change_x = PLAYER_MOVEMENT_SPEED
+
+    def on_key_release(self, key, modifiers):
+        if key == arcade.key.LEFT or key == arcade.key.RIGHT:
+            self.player_sprite.change_x = 0
+
+def main():
+    game = MyGame()
+    game.setup()
+    arcade.run()
+
+if __name__ == "__main__":
+    main()
